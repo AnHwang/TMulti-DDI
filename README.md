@@ -1,12 +1,19 @@
 ## environment requirements
 Package         Version
 --------------- --------
-python          3.7 \n
-tensorflow-gpu  2.8.0 \n
+
+python          3.7 
+
+tensorflow-gpu  2.8.0 
+
 keras           2.8.0
+
 numpy           1.20.3
+
 pandas          1.3.4
+
 scipy           1.7.1
+
 scikit-learn    0.24.2
 
 ## Hardware Requirements
