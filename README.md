@@ -1,6 +1,6 @@
 ## TMulti-DDI: Predicting Drug-Drug Interaction Events with a Trusted Multimodal Deep Learning Framework
 
-![Framework](TMulti-DDI/model/fig2.pdf)
+![Framework](TMulti-DDI/main/model/fig2.pdf)
 
 ## Environment requirements
 + python          3.7 
