@@ -1,0 +1,563 @@
+import xml.sax
+
+class drug():
+    def __init__(self,drugbankId,drugName):
+        self.drugbankId = drugbankId
+        self.drugName = drugName
+        #self.smile = smile
+        #self.targets = targets
+        #self.enzymes = enzymes
+
+
+class MyHandler(xml.sax.handler.ContentHandler):
+    def __init__(self):
+        self.drugbankId = ""
+        self.drugName = ""
+        self.drug = None
+        self.drugs = []
+        #self.count = 0
+        self.previous_tag = ""
+        self.current_tag = "" #this note
+        self.next_tag = ""
+        self.limit = 0
+
+        self.valid = 0
+        self.cover = 0
+
+    def startDocument(self):
+        pass
+
+    #start
+    def startElement(self, tag_name, tag_attrs):
+        if tag_name == "drug" and tag_attrs:
+            if tag_attrs["type"] == "small molecule":
+                self.limit = 1
+                self.valid = 1
+                self.cover = 1
+                self.current_tag = tag_name
+                self.previous_tag = tag_name
+            else:
+                self.limit = 0
+                self.valid = 0
+
+
+        if self.limit == 1 and tag_name == "drugbank-id" and tag_attrs:
+            if tag_attrs["primary"] == "true":
+                self.current_tag = tag_name
+
+        if self.limit == 1 and self.cover == 1 and tag_name == "name" and self.previous_tag == "drug":
+            self.cover = 0
+            self.previous_tag == ""
+            self.current_tag = tag_name
+
+
+        if tag_name == "pathways":
+            self.limit = 2
+
+        if tag_name == "salts":
+            self.limit = 2
+
+
+    def characters(self, content):
+
+        if self.limit == 1 and self.current_tag == "drugbank-id":
+            #print(content)
+            #self.count += 1
+            self.drugbankId = content
+            self.current_tag = ""
+
+
+        if  self.limit == 1 and self.previous_tag == "drug" and self.current_tag == "name":
+            self.limit = 2
+            self.drugName = content
+            self.current_tag = ""
+            #print(content)
+
+
+    def endElement(self, tag_name):
+
+        if tag_name == "pathways":
+            self.limit = 1
+        if tag_name == "salts":
+            self.limit = 1
+        if tag_name == "drug":
+            #self.current_tag == ""
+            if self.limit == 1 and self.valid == 1:
+                self.drug = drug(self.drugbankId,self.drugName)
+                #print(self.drugbankId,self.drugName)
+                self.drugs.append(self.drug)
+
+    def endDocument(self):
+        pass
+
+
+if __name__ == '__main__':
+    # create XMLReader：parper = xml.sax.make_parser()
+    parser = xml.sax.make_parser()
+    parser.setFeature(xml.sax.handler.feature_namespaces,0)
+    handler = MyHandler()
+    parser.setContentHandler(handler)
+    parser.parse('fulldatabase.xml')
+    for i in handler.drugs:
+        print(i)
+
+
+
+from unicodedata import combining
+from numpy.random import seed
+import csv
+import time
+import numpy as np
+import pandas as pd
+from pandas import DataFrame
+from sklearn.model_selection import KFold
+from sklearn.decomposition import PCA
+from sklearn.metrics import auc
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import f1_score
+from sklearn.metrics import precision_score
+from sklearn.metrics import precision_recall_curve
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import label_binarize
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from keras.models import Model
+from keras.layers import Dense, Dropout, Input, Activation, BatchNormalization
+from keras.callbacks import EarlyStopping
+import tensorflow as tf
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1,3"
+
+def DNN():
+    train_input = Input(shape=(vector_size * 2,), name='Inputlayer')
+
+    train_in = Dense(512, activation='relu')(train_input)
+    train_in = BatchNormalization()(train_in)
+    train_in = Dropout(droprate)(train_in)
+
+    train_in = Dense(256, activation='relu')(train_in)
+    train_in = BatchNormalization()(train_in)
+    train_in = Dropout(droprate)(train_in)
+
+    train_in = Dense(event_num)(train_in)
+    out = Activation('relu')(train_in)
+    model = Model(inputs=train_input, outputs=out)
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+
+    return model
+
+
+def prepare(df_drug, feature_list, vector_size, mechanism, action, drugA, drugB):
+    d_label = {}
+    d_feature = {}
+    d_smin_feature = {}
+    # Transfrom the interaction event to number
+    # Splice the features
+    d_event = []
+    for i in range(len(mechanism)):
+        d_event.append(mechanism[i] + " " + action[i])
+    label_value = 0
+    count = {}
+    for i in d_event:
+        if i in count:
+            count[i] += 1
+        else:
+            count[i] = 1
+    list1 = sorted(count.items(), key=lambda x: x[1], reverse=True)
+    for i in range(len(list1)):
+        d_label[list1[i][0]] = i
+    smin_vector = np.zeros((len(np.array(df_drug['name']).tolist()), 0), dtype=float)
+    for i in feature_list:
+        sim_matrix = feature_vector(i, df_drug, vector_size)
+        smin_vector = np.hstack((smin_vector, sim_matrix))
+    # Transfrom the drug ID to feature vector
+
+    for i in range(len(np.array(df_drug['name']).tolist())):
+        d_smin_feature[np.array(df_drug['name']).tolist()[i]] = smin_vector[i]
+
+    # Use the dictionary to obtain feature vector and label
+    smin_feature_matrix = []
+    new_label = []
+    for i in range(len(d_event)):
+        smin_feature_matrix.append(np.hstack((d_smin_feature[drugA[i]], d_smin_feature[drugB[i]])))
+        new_label.append(d_label[d_event[i]])
+
+    smin_feature_matrix = np.array(smin_feature_matrix)
+    new_label = np.array(new_label)
+
+    return (smin_feature_matrix, new_label, event_num)
+
+
+def feature_vector(feature_name, df, vector_size):
+    # df are the 572 kinds of drugs
+    # Jaccard Similarity
+    def Jaccard(matrix):
+        matrix = np.mat(matrix)
+        numerator = matrix * matrix.T
+        denominator = np.ones(np.shape(matrix)) * matrix.T + matrix * np.ones(np.shape(matrix.T)) - matrix * matrix.T
+        return numerator / denominator
+
+    all_feature = []
+    drug_list = np.array(df[feature_name]).tolist()
+
+    # Features for each drug, for example, when feature_name is target, drug_list=["P30556|P05412","P28223|P46098|……"]
+    for i in drug_list:
+        for each_feature in i.split('|'):
+            if each_feature not in all_feature:
+                all_feature.append(each_feature)  # obtain all the features
+    feature_matrix = np.zeros((len(drug_list), len(all_feature)), dtype=float)
+
+    df_feature = DataFrame(feature_matrix, columns=all_feature)  # Consrtuct feature matrices with key of dataframe
+    for i in range(len(drug_list)):
+        for each_feature in df[feature_name].iloc[i].split('|'):
+            df_feature[each_feature].iloc[i] = 1
+
+    sim_matrix = Jaccard(np.array(df_feature))
+    pca = PCA(n_components=vector_size)  # PCA dimension
+    pca.fit(sim_matrix)
+    sim_matrix = pca.transform(sim_matrix)
+    return sim_matrix
+
+
+def get_index(label_matrix, event_num, seed, CV):
+    index_all_class = np.zeros(len(label_matrix))
+    for j in range(event_num):
+        index = np.where(label_matrix == j)
+        kf = KFold(n_splits=CV, shuffle=True, random_state=seed)
+        k_num = 0
+        for train_index, test_index in kf.split(range(len(index[0]))):
+            index_all_class[index[0][test_index]] = k_num
+            k_num += 1
+    return index_all_class
+
+
+def dirichlet(e):
+    a = e + 1
+    s = a.sum()
+    b = e / np.sum(a, keepdims=True)
+    u = len(e) / s
+    return b, u
+
+
+def DS_Combin_two(e1, e2):
+    e1_b, e1_u = dirichlet(e1)
+    e2_b, e2_u = dirichlet(e2)
+
+    p1 = e1_b * e2_b
+    p2 = e1_b * e2_u
+    p3 = e2_b * e1_u
+
+    c = (np.matmul(e1_b, np.tile(e2_b, (len(e1_b), 1)))).sum() - p1.sum()
+
+    b = 1 / (1 - c) * (p1 + p2 + p3)
+
+    u = 1 / (1 - c) * e1_u * e2_u
+
+    return b, u
+
+
+def validation(smin_feature_matrix, label_matrix,classifier, event_num, seed, CV, feature_list):
+    all_eval_type = 11
+    result_all = np.zeros((all_eval_type, 1), dtype=float)
+    each_eval_type = 6
+    result_eve = np.zeros((event_num, each_eval_type), dtype=float)
+    y_true = np.array([])
+    y_pred = np.array([])
+    y_score = np.zeros((0, event_num), dtype=float)
+    index_all_class = get_index(label_matrix, event_num, seed, CV)
+    smin_matrix = []
+    combin = None
+
+    if type(smin_feature_matrix) != list:
+        smin_matrix.append(smin_feature_matrix)
+        smin_feature_matrix = smin_matrix
+
+    for k in range(CV):
+        train_index = np.where(index_all_class != k)
+        test_index = np.where(index_all_class == k)
+        pred = np.zeros((len(test_index[0]), event_num), dtype=float)
+        pred_smile = np.zeros((len(test_index[0]), event_num), dtype=float)
+        pred_target = np.zeros((len(test_index[0]), event_num), dtype=float)
+        pred_enzyme = np.zeros((len(test_index[0]), event_num), dtype=float)
+
+        for i in range(len(smin_feature_matrix)):
+            x_train = smin_feature_matrix[i][train_index]
+            x_test = smin_feature_matrix[i][test_index]
+            y_train = label_matrix[train_index]
+            # one-hot encoding
+            y_train_one_hot = np.array(y_train)
+            y_train_one_hot = (np.arange(y_train_one_hot.max() + 1) == y_train[:, None]).astype(dtype='float32')
+            y_test = label_matrix[test_index]
+            # one-hot encoding
+            y_test_one_hot = np.array(y_test)
+            y_test_one_hot = (np.arange(y_test_one_hot.max() + 1) == y_test[:, None]).astype(dtype='float32')
+            if classifier == 'TMDDI':
+                dnn = DNN()
+                early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=0, mode='auto')
+                dnn.fit(x_train, y_train_one_hot, batch_size=128, epochs=100, validation_data=(x_test, y_test_one_hot),
+                        callbacks=[early_stopping])
+                pred += dnn.predict(x_test)
+                np.set_printoptions(suppress=False)
+                continue
+            elif classifier == 'RF':
+                clf = RandomForestClassifier(n_estimators=100)
+            elif classifier == 'DT':
+                clf = clf = DecisionTreeClassifier()
+            elif classifier == 'KNN':
+                clf = KNeighborsClassifier(n_neighbors=4)
+            else:
+                clf = LogisticRegression()
+            clf.fit(x_train, y_train)
+            pred += clf.predict_proba(x_test)
+            if i == 0:
+                pred_smile += pred
+            if i == 1:
+                pred_target += pred
+            if i == 2:
+                pred_enzyme += pred
+
+        pred_score = None
+        pred = None
+        pred_3 = None
+        combin_u = None
+        combin_3_u = None
+        if len(smin_feature_matrix) == 1:
+            pred = pred_smile
+            pred_score = pred
+
+        if len(smin_feature_matrix) == 2:
+            print('------conbin_2------')
+            for i in range(len(pred_smile)):
+                a1 = pred_smile[i]
+                a2 = pred_target[i]
+
+                b, u = DS_Combin_two(a1, a2)
+
+                if pred is None:
+                    pred = b
+                else:
+                    pred = np.row_stack((pred, b))
+
+                if combin_u is None:
+                    combin_u = u
+                else:
+                    combin_u = np.row_stack((combin_u, u))
+                pred_score = pred
+
+        if len(smin_feature_matrix) == 3:
+            print('------conbin_3------')
+            for i in range(len(pred_smile)):
+                a1 = pred_smile[i]
+                a2 = pred_target[i]
+
+                b, u = DS_Combin_two(a1, a2)
+
+                if pred is None:
+                    pred = b
+                else:
+                    pred = np.row_stack((pred, b))
+
+                if combin_u is None:
+                    combin_u = u
+                else:
+                    combin_u = np.row_stack((combin_u, u))
+            for i in range(len(pred_smile)):
+                a1 = pred[i]
+                a2 = pred_enzyme[i]
+
+                e1_b = pred[i]
+                e1_u = combin_u[i]
+                e2_b, e2_u = dirichlet(a2)
+
+                p1 = e1_b * e2_b
+                p2 = e1_b * e2_u
+                p3 = e2_b * e1_u
+
+                c = (np.matmul(e1_b, np.tile(e2_b, (len(e1_b), 1)))).sum() - p1.sum()
+                b = 1 / (1 - c) * (p1 + p2 + p3)
+
+                u = 1 / (1 - c) * e1_u * e2_u
+
+                if pred_3 is None:
+                    pred_3 = b
+                else:
+                    pred_3 = np.row_stack((pred_3, b))
+
+                if combin_3_u is None:
+                    combin_3_u = u
+                else:
+                    combin_3_u = np.row_stack((combin_3_u, u))
+            pred_score = pred_3
+
+        print(pred_score)
+        pred_type = np.argmax(pred_score, axis=1)
+        y_true = np.hstack((y_true, y_test))
+        y_pred = np.hstack((y_pred, pred_type))
+        y_score = np.row_stack((y_score, pred_score))
+        print('y_true:', y_true.shape)
+        print('y_pred:', y_pred.shape)
+        print('y_score:', y_score.shape)
+        result_all, result_eve = evaluate(y_pred, y_score, y_true, event_num, feature_list)
+        print(result_all)
+
+        if combin is None:
+            combin = combin_u
+        else:
+            combin = np.row_stack((combin, combin_u))
+
+    np.savetxt('uncertainty.txt', combin, newline='\n')
+    result_all, result_eve = evaluate(y_pred, y_score, y_true, event_num, feature_list)
+
+    return result_all, result_eve
+
+
+def evaluate(pred_type, pred_score, y_test, event_num, feature_list):
+    all_eval_type = 11
+    result_all = np.zeros((all_eval_type, 1), dtype=float)
+    each_eval_type = 6
+    result_eve = np.zeros((event_num, each_eval_type), dtype=float)
+    y_one_hot = label_binarize(y_test, classes=np.arange(event_num))
+    pred_one_hot = label_binarize(pred_type, classes=np.arange(event_num))
+
+    precision, recall, th = multiclass_precision_recall_curve(y_one_hot, pred_score)
+
+    result_all[0] = accuracy_score(y_test, pred_type)
+    result_all[1] = roc_aupr_score(y_one_hot, pred_score, average='micro')
+    result_all[2] = roc_aupr_score(y_one_hot, pred_score, average='macro')
+    result_all[3] = roc_auc_score(y_one_hot, pred_score, average='micro')
+    result_all[4] = roc_auc_score(y_one_hot, pred_score, average='macro')
+    result_all[5] = f1_score(y_test, pred_type, average='micro')
+    result_all[6] = f1_score(y_test, pred_type, average='macro')
+    result_all[7] = precision_score(y_test, pred_type, average='micro')
+    result_all[8] = precision_score(y_test, pred_type, average='macro')
+    result_all[9] = recall_score(y_test, pred_type, average='micro')
+    result_all[10] = recall_score(y_test, pred_type, average='macro')
+    for i in range(event_num):
+        result_eve[i, 0] = accuracy_score(y_one_hot.take([i], axis=1).ravel(), pred_one_hot.take([i], axis=1).ravel())
+        result_eve[i, 1] = roc_aupr_score(y_one_hot.take([i], axis=1).ravel(), pred_one_hot.take([i], axis=1).ravel(),
+                                          average=None)
+        result_eve[i, 2] = roc_auc_score(y_one_hot.take([i], axis=1).ravel(), pred_one_hot.take([i], axis=1).ravel(),
+                                         average=None)
+        result_eve[i, 3] = f1_score(y_one_hot.take([i], axis=1).ravel(), pred_one_hot.take([i], axis=1).ravel(),
+                                    average='binary')
+        result_eve[i, 4] = precision_score(y_one_hot.take([i], axis=1).ravel(), pred_one_hot.take([i], axis=1).ravel(),
+                                           average='binary')
+        result_eve[i, 5] = recall_score(y_one_hot.take([i], axis=1).ravel(), pred_one_hot.take([i], axis=1).ravel(),
+                                        average='binary')
+    return [result_all, result_eve]
+
+
+def self_metric_calculate(y_true, pred_type):
+    y_true = y_true.ravel()
+    y_pred = pred_type.ravel()
+    if y_true.ndim == 1:
+        y_true = y_true.reshape((-1, 1))
+    if y_pred.ndim == 1:
+        y_pred = y_pred.reshape((-1, 1))
+    y_true_c = y_true.take([0], axis=1).ravel()
+    y_pred_c = y_pred.take([0], axis=1).ravel()
+    TP = 0
+    TN = 0
+    FN = 0
+    FP = 0
+    for i in range(len(y_true_c)):
+        if (y_true_c[i] == 1) and (y_pred_c[i] == 1):
+            TP += 1
+        if (y_true_c[i] == 1) and (y_pred_c[i] == 0):
+            FN += 1
+        if (y_true_c[i] == 0) and (y_pred_c[i] == 1):
+            FP += 1
+        if (y_true_c[i] == 0) and (y_pred_c[i] == 0):
+            TN += 1
+    print("TP=", TP, "FN=", FN, "FP=", FP, "TN=", TN)
+    return (TP / (TP + FP), TP / (TP + FN))
+
+
+def multiclass_precision_recall_curve(y_true, y_score):
+    y_true = y_true.ravel()
+    y_score = y_score.ravel()
+    if y_true.ndim == 1:
+        y_true = y_true.reshape((-1, 1))
+    if y_score.ndim == 1:
+        y_score = y_score.reshape((-1, 1))
+    y_true_c = y_true.take([0], axis=1).ravel()
+    y_score_c = y_score.take([0], axis=1).ravel()
+    precision, recall, pr_thresholds = precision_recall_curve(y_true_c, y_score_c)
+    return (precision, recall, pr_thresholds)
+
+
+def roc_aupr_score(y_true, y_score, average="macro"):
+    def _binary_roc_aupr_score(y_true, y_score):
+        precision, recall, pr_thresholds = precision_recall_curve(y_true, y_score)
+        return auc(recall, precision)
+
+    def _average_binary_score(binary_metric, y_true, y_score, average):  # y_true= y_one_hot
+        if average == "binary":
+            return binary_metric(y_true, y_score)
+        if average == "micro":
+            y_true = y_true.ravel()
+            y_score = y_score.ravel()
+        if y_true.ndim == 1:
+            y_true = y_true.reshape((-1, 1))
+        if y_score.ndim == 1:
+            y_score = y_score.reshape((-1, 1))
+        n_classes = y_score.shape[1]
+        score = np.zeros((n_classes,))
+        for c in range(n_classes):
+            y_true_c = y_true.take([c], axis=1).ravel()
+            y_score_c = y_score.take([c], axis=1).ravel()
+            score[c] = binary_metric(y_true_c, y_score_c)
+        return np.average(score)
+
+    return _average_binary_score(_binary_roc_aupr_score, y_true, y_score, average)
+
+
+def save_result(feature_name, result_type, name, result):
+    with open(feature_name + '_' + result_type + '_' + name + '.csv', "w", newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        for i in result:
+            writer.writerow(i)
+    return 0
+
+
+def main():
+    seed = 0
+    CV = 5
+    df_drug = pd.read_csv('/home/huangan/workspace/TMDDIE/dataset/drug_information.csv')
+
+    feature_list = ['smile','target', 'enzyme']
+    featureName = "+".join(feature_list)
+    for feature in feature_list:
+        set_name = feature + '+'
+    set_name = set_name[:-1]
+    all_smin_matrix = []
+
+    extraction = pd.read_csv('/home/huangan/workspace/TMDDIE/dataset/drug_interaction.csv')
+    mechanism = extraction['mechanism']
+    action = extraction['action']
+    drugA = extraction['drugA']
+    drugB = extraction['drugB']
+
+    for feature in feature_list:
+        smin_feature_matrix, new_label, event_num = prepare(df_drug, [feature], vector_size, mechanism, action, drugA,
+                                                            drugB)
+        all_smin_matrix.append(smin_feature_matrix)
+    classifier = "TMDDI"
+    all_result, each_result = validation(all_smin_matrix, new_label, classifier,event_num, seed, CV, feature_list)
+    print(all_result)
+    save_result(featureName, 'all', 'TMutil-DDI', all_result)
+    save_result(featureName, 'each', 'TMutil-DDI', each_result)
+
+
+seed(1)
+event_num = 100
+droprate = 0.3
+vector_size = 1258
+CV = 5
+
+main()
