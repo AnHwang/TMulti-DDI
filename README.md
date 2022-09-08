@@ -1,3 +1,5 @@
+## TMulti-DDI: Predicting Drug-Drug Interaction Events with a Trusted Multimodal Deep Learning Framework
+
 ## Environment requirements
 + python          3.7 
 + tensorflow-gpu  2.8.0 
