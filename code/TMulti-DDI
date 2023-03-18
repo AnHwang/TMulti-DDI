@@ -195,7 +195,7 @@ def validation(smin_feature_matrix, label_matrix,classifier, event_num, seed, CV
             if classifier == 'TMDDI':
                 dnn = DNN()
                 early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=0, mode='auto')
-                dnn.fit(x_train, y_train_one_hot, batch_size=128, epochs=100, validation_data=(x_test, y_test_one_hot),
+                dnn.fit(x_train, y_train_one_hot, batch_size=128, epochs=120, validation_data=(x_test, y_test_one_hot),
                         callbacks=[early_stopping])
                 pred += dnn.predict(x_test)
                 np.set_printoptions(suppress=False)
